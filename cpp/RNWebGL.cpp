@@ -83,10 +83,25 @@ private:
 
   // [JS thread] Send the current 'next' batch to GL and make a new 'next' batch
   void endNextBatch() noexcept {
-    std::lock_guard<decltype(backlogMutex)> lock(backlogMutex);
-    backlog.emplace_back();
-    backlog.back().reserve(nextBatch.size());
-    backlog.back().swap(nextBatch);
+    bool isFirst = true;
+    for (;;) {
+      if (isFirst) {
+        // 等待放在解锁前，避免性能问题。
+        struct timespec tim, tim2;
+        tim.tv_sec = 0;
+        tim.tv_nsec = 5000L;
+        nanosleep(&tim, &tim2);
+        isFirst = false;
+      }
+      std::lock_guard<decltype(backlogMutex)> lock(backlogMutex);
+      if (backlog.size() > 0) {
+        continue;
+      }
+      backlog.emplace_back();
+      backlog.back().reserve(nextBatch.size());
+      backlog.back().swap(nextBatch);
+      break;
+    }
   }
 
   // [JS thread] Add an Op to the 'next' batch -- the arguments are any form of

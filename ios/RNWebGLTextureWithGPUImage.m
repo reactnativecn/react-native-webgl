@@ -17,7 +17,10 @@
     output.delegate = self;
     [source useNextFrameForImageCapture];
     if (!yflip) {
-      [source addTarget:output];
+      filter = [[GPUImageCropFilter alloc] init];
+      [filter useNextFrameForImageCapture];
+      [filter addTarget:output];
+      [source addTarget:filter];
     }
     else {
       filter = [[GPUImageCropFilter alloc] init];
