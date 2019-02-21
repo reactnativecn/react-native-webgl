@@ -75,30 +75,39 @@ def getNdkBuildFullPath() {
   return ndkBuildFullPath
 }
 
-task downloadJSCHeaders(dependsOn: createNativeDepsDirectories, type: Download) {
-  // in sync with webkit SVN revision 174650
-  def jscAPIBaseURL = 'https://raw.githubusercontent.com/WebKit/webkit/38b15a3ba3c1b0798f2036f7cea36ffdc096202e/Source/JavaScriptCore/API/'
-  def jscHeaderFiles = ['JavaScript.h', 'JSBase.h', 'JSContextRef.h', 'JSObjectRef.h', 'JSRetainPtr.h', 'JSStringRef.h', 'JSValueRef.h', 'WebKitAvailability.h']
-  def output = new File(downloadsDir, 'jsc')
-  output.mkdirs()
-  src(jscHeaderFiles.collect { headerName -> "$jscAPIBaseURL$headerName" })
+task downloadJSC(dependsOn: createNativeDepsDirectories, type: Download) {
+  def JSC_VERSION = "236355.1.1"
+  src "https://registry.npmjs.org/jsc-android/-/jsc-android-${JSC_VERSION}.tgz"
   onlyIfNewer true
   overwrite false
-  dest output
+  dest new File(downloadsDir, "jsc-${JSC_VERSION}.tar.gz")
 }
 
-task prepareJSC(dependsOn: downloadJSCHeaders) << {
-  copy {
-    from {downloadJSCHeaders.dest}
-    include 'jni/**/*.so', '*.h', 'Android.mk'
-    filesMatching('*.h', { fname -> fname.path = "JavaScriptCore/${fname.path}"})
-    into "$thirdPartyNdkDir/jsc";
+// Create Android.mk library module based on jsc from npm
+task prepareJSC(dependsOn: downloadJSC) {
+  doLast {
+      def jscTar = tarTree(downloadJSC.dest)
+      def jscAAR = jscTar.matching({ it.include "**/android-jsc/**/*.aar" }).singleFile
+      def soFiles = zipTree(jscAAR).matching({ it.include "**/*.so" })
+
+      def headerFiles = jscTar.matching({ it.include "**/include/*.h" })
+
+      copy {
+          from soFiles
+          from headerFiles
+          from "src/main/jni/third-party/jsc/Android.mk"
+
+          filesMatching("**/*.h", { it.path = "JavaScriptCore/${it.name}" })
+
+          includeEmptyDirs false
+          into "$thirdPartyNdkDir/jsc"
+      }
   }
 }
 
 task buildRNWebGLLib(dependsOn: [prepareJSC], type: Exec) {
-  inputs.file('src/main/jni')
-  inputs.file('../cpp')
+  inputs.dir('src/main/jni')
+  inputs.dir('../cpp')
   outputs.dir("$buildDir/exgl/all")
   commandLine getNdkBuildFullPath(),
           'NDK_PROJECT_PATH=null',
@@ -124,12 +133,12 @@ task packageRNWebGLLibs(dependsOn: buildRNWebGLLib, type: Copy) {
 }
 
 android {
-  compileSdkVersion 24
-  buildToolsVersion '25.0.0'
+  compileSdkVersion 28
+  buildToolsVersion '28.0.3'
 
   defaultConfig {
     minSdkVersion 17
-    targetSdkVersion 24
+    targetSdkVersion 27
     versionCode 1
     versionName "1.0"
     ndk {
@@ -152,5 +161,5 @@ repositories {
 }
 
 dependencies {
-  compile "com.facebook.react:react-native:+"  // From node_modules
+  implementation "com.facebook.react:react-native:+"  // From node_modules
 }
